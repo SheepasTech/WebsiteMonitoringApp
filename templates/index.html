@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Website Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        table, th, td { border: 1px solid black; border-collapse: collapse; padding: 8px; }
+        th { background-color: #f2f2f2; }
+        body { font-family: Arial, sans-serif; }
+        .container { width: 90%; margin: auto; text-align: center; }
+        .button-container { margin-bottom: 20px; }
+        .button { padding: 10px 20px; background-color: #007BFF; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        .button:hover { background-color: #0056b3; }
+        .status-message { margin: 10px 0; padding: 10px; border-radius: 5px; display: none; }
+        .status-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .auto-refresh { margin-left: 10px; font-size: 12px; color: #666; }
+        .chart-container { margin: 30px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
+        .chart-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
+        .chart-canvas {
+            width: 100% !important;
+            height: 400px !important;
+            max-height: 400px;
+        }
+        .chart-controls { margin-bottom: 15px; }
+        .chart-controls select { padding: 5px; margin: 0 10px; border-radius: 3px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Website Monitoring Dashboard</h1>
+        <div class="button-container">
+            <a href="{{ url_for('add_website') }}"><button class="button">Add New Website</button></a>
+            <button type="button" class="button" onclick="runMonitoring()">Run Monitoring</button>
+            <button type="button" class="button" onclick="toggleAutoRefresh()" id="toggle-refresh-btn">Start Auto-Monitoring</button>
+            <button type="button" class="button" onclick="refreshTable()" style="background-color: #28a745;">Manual Refresh</button>
+            <span class="auto-refresh">Auto-refresh: <span id="refresh-status">Off</span></span>
+        </div>
+        <div id="status-message" class="status-message"></div>
+
+        <!-- Jitter Chart Section -->
+        <div class="chart-container">
+            <div class="chart-title">📊 Jitter Trends Over Time</div>
+            <div class="chart-controls">
+                <label for="website-select">Website:</label>
+                <select id="website-select" onchange="updateJitterChart()">
+                    <option value="all">All Websites</option>
+                </select>
+                <label for="time-range">Time Range:</label>
+                <select id="time-range" onchange="updateJitterChart()">
+                    <option value="24h">Current Session (2h)</option>
+                    <option value="7d">Last Day</option>
+                    <option value="30d">Last Week</option>
+                </select>
+                <button type="button" class="button" onclick="updateJitterChart()" style="background-color: #28a745; padding: 5px 15px; font-size: 12px;">Refresh Chart</button>
+                <button type="button" class="button" onclick="testChart()" style="background-color: #ffc107; padding: 5px 15px; font-size: 12px;">Test Chart</button>
+            </div>
+            <canvas id="jitterChart" class="chart-canvas"></canvas>
+        </div>
+
+        <table>
+            <tr>
+                <th>URL</th>
+                <th>Time Namelookup (ms)</th>
+                <th>Time Connect (ms)</th>
+                <th>Time Appconnect (ms)</th>
+                <th>Time Pretransfer (ms)</th>
+                <th>Time Redirect (ms)</th>
+                <th>Time Starttransfer (ms)</th>
+                <th>Total Time (ms)</th>
+                <th>Speed Download (KB/s)</th>
+                <th>Speed Upload (KB/s)</th>
+                <th>Size Download (bytes)</th>
+                <th>Jitter (ms)</th>
+                <th>Checked At</th>
+            </tr>
+            {% for metric in metrics %}
+            <tr>
+                <td><a href="{{ url_for('metrics', url=metric.url) }}">{{ metric.url }}</a></td>
+                <td>{{ "%.1f"|format((metric.time_namelookup or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_connect or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_appconnect or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_pretransfer or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_redirect or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_starttransfer or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.time_total or 0) * 1000) }}</td>
+                <td>{{ "%.1f"|format((metric.speed_download or 0) / 1024) }}</td>
+                <td>{{ "%.1f"|format((metric.speed_upload or 0) / 1024) }}</td>
+                <td>{{ metric.size_download or 0 }}</td>
+                <td style="font-weight: bold; color: #007BFF;">{{ "%.1f"|format((metric.jitter or 0) * 1000) }}</td>
+                <td>{{ metric.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <script>
+        let refreshInterval = null;
+        let isMonitoring = false;
+        let jitterChart = null;
+
+        // Chart colors for different websites
+        const chartColors = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+        ];
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message status-${type}`;
+            statusDiv.style.display = 'block';
+
+            // Auto-hide after 5 seconds for success messages
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        function refreshTable() {
+            console.log('🔄 Refreshing table display...');
+
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    // Build complete table HTML
+                    const tableHTML = buildTableHTML(data.metrics);
+
+                    // Replace entire table
+                    const currentTable = document.querySelector('table');
+                    if (currentTable) {
+                        currentTable.outerHTML = tableHTML;
+                        console.log('✅ Table display refreshed');
+                    }
+
+                    // Update chart and website selector
+                    updateWebsiteSelector(data.metrics);
+                    updateJitterChart();
+                })
+                .catch(error => {
+                    console.error('❌ Error refreshing table:', error);
+                });
+        }
+
+        function runMonitoringAndRefresh() {
+            console.log('🚀 Auto-refresh: Running monitoring...');
+
+            // Add visual indicator
+            const refreshStatus = document.getElementById('refresh-status');
+            const originalText = refreshStatus.textContent;
+            refreshStatus.textContent = 'Running...';
+            refreshStatus.style.color = 'orange';
+
+            // Run monitoring (same as clicking "Run Monitoring" button)
+            fetch('{{ url_for("run_monitor") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    console.log('✅ Monitoring completed successfully');
+                    // Wait a moment then refresh table to show new data
+                    setTimeout(refreshTable, 2000);
+                } else {
+                    console.error('❌ Monitoring failed');
+                }
+
+                // Reset visual indicator
+                refreshStatus.textContent = originalText;
+                refreshStatus.style.color = '';
+            })
+            .catch(error => {
+                console.error('❌ Error running monitoring:', error);
+
+                // Reset visual indicator
+                refreshStatus.textContent = originalText;
+                refreshStatus.style.color = 'red';
+            });
+        }
+
+        function buildTableHTML(metrics) {
+            let tableHTML = `
+                <table>
+                    <tr>
+                        <th>URL</th>
+                        <th>Time Namelookup (ms)</th>
+                        <th>Time Connect (ms)</th>
+                        <th>Time Appconnect (ms)</th>
+                        <th>Time Pretransfer (ms)</th>
+                        <th>Time Redirect (ms)</th>
+                        <th>Time Starttransfer (ms)</th>
+                        <th>Total Time (ms)</th>
+                        <th>Speed Download (KB/s)</th>
+                        <th>Speed Upload (KB/s)</th>
+                        <th>Size Download (bytes)</th>
+                        <th>Jitter (ms)</th>
+                        <th>Checked At</th>
+                    </tr>`;
+
+            metrics.forEach(metric => {
+                tableHTML += `
+                    <tr>
+                        <td><a href="/metrics/${encodeURIComponent(metric.url)}">${metric.url}</a></td>
+                        <td>${(parseFloat(metric.time_namelookup || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_connect || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_appconnect || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_pretransfer || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_redirect || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_starttransfer || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.time_total || 0) * 1000).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.speed_download || 0) / 1024).toFixed(1)}</td>
+                        <td>${(parseFloat(metric.speed_upload || 0) / 1024).toFixed(1)}</td>
+                        <td>${parseFloat(metric.size_download || 0).toFixed(0)}</td>
+                        <td style="font-weight: bold; color: #007BFF;">${(parseFloat(metric.jitter || 0) * 1000).toFixed(1)}</td>
+                        <td>${metric.timestamp || ''}</td>
+                    </tr>`;
+            });
+
+            tableHTML += `</table>`;
+            return tableHTML;
+        }
+
+        function updateWebsiteSelector(metrics) {
+            const selector = document.getElementById('website-select');
+            const currentValue = selector.value;
+
+            // Get unique websites
+            const websites = [...new Set(metrics.map(m => m.url))];
+
+            // Clear and rebuild options
+            selector.innerHTML = '<option value="all">All Websites</option>';
+            websites.forEach(url => {
+                const option = document.createElement('option');
+                option.value = url;
+                option.textContent = url;
+                selector.appendChild(option);
+            });
+
+            // Restore selection if it still exists
+            if (websites.includes(currentValue)) {
+                selector.value = currentValue;
+            }
+        }
+
+        async function fetchJitterData() {
+            const selectedWebsite = document.getElementById('website-select').value;
+            const timeRange = document.getElementById('time-range').value;
+
+            console.log(`🔍 Fetching jitter data for website: ${selectedWebsite}, range: ${timeRange}`);
+
+            try {
+                const url = `/api/jitter-data?website=${selectedWebsite}&range=${timeRange}`;
+                console.log(`📡 Requesting: ${url}`);
+
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log(`📊 Received ${data.datasets?.length || 0} datasets`);
+                return data;
+            } catch (error) {
+                console.error('❌ Error fetching jitter data:', error);
+                return { datasets: [] };
+            }
+        }
+
+        async function updateJitterChart() {
+            console.log('📊 Updating jitter chart...');
+
+            try {
+                const canvas = document.getElementById('jitterChart');
+                if (!canvas) {
+                    console.error('❌ Chart canvas not found!');
+                    return;
+                }
+
+                const ctx = canvas.getContext('2d');
+                const jitterData = await fetchJitterData();
+
+                console.log('📊 Jitter data received:', jitterData);
+
+                // Destroy existing chart
+                if (jitterChart) {
+                    jitterChart.destroy();
+                }
+
+                // Check if we have data
+                if (!jitterData.datasets || jitterData.datasets.length === 0) {
+                    console.log('⚠️ No jitter data available, creating empty chart');
+
+                    // Create empty chart with sample data
+                    jitterChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: ['No Data'],
+                            datasets: [{
+                                label: 'No Data Available',
+                                data: [0],
+                                borderColor: '#cccccc',
+                                backgroundColor: '#cccccc20',
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Jitter (seconds)'
+                                    },
+                                    beginAtZero: true
+                                }
+                            },
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Network Jitter Over Time - No Data Available'
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    // Create chart with real data
+                    jitterChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            datasets: jitterData.datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: {
+                                    type: 'time',
+                                    time: {
+                                        displayFormats: {
+                                            minute: 'HH:mm',
+                                            hour: 'MMM DD HH:mm',
+                                            day: 'MMM DD'
+                                        }
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Time'
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Jitter (milliseconds)'
+                                    },
+                                    beginAtZero: true
+                                }
+                            },
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Network Jitter Over Time'
+                                },
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                }
+                            },
+                            interaction: {
+                                intersect: false,
+                                mode: 'index'
+                            }
+                        }
+                    });
+                }
+
+                console.log('✅ Chart created successfully');
+
+            } catch (error) {
+                console.error('❌ Error creating chart:', error);
+
+                // Fallback: show error message in chart area
+                const canvas = document.getElementById('jitterChart');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ff0000';
+                    ctx.font = '16px Arial';
+                    ctx.fillText('Chart Error: ' + error.message, 10, 50);
+                }
+            }
+        }
+
+        function testChart() {
+            console.log('🧪 Testing chart creation...');
+
+            try {
+                const canvas = document.getElementById('jitterChart');
+                if (!canvas) {
+                    alert('❌ Canvas not found!');
+                    return;
+                }
+
+                const ctx = canvas.getContext('2d');
+
+                if (jitterChart) {
+                    jitterChart.destroy();
+                }
+
+                // Create simple test chart
+                jitterChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['10:00', '10:05', '10:10', '10:15', '10:20'],
+                        datasets: [{
+                            label: 'Test Jitter',
+                            data: [1.0, 3.0, 2.0, 5.0, 4.0],  // Test data in milliseconds
+                            borderColor: '#FF6384',
+                            backgroundColor: '#FF638420',
+                            fill: false,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Jitter (milliseconds)'
+                                },
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Test Jitter Chart'
+                            }
+                        }
+                    }
+                });
+
+                console.log('✅ Test chart created successfully');
+                alert('✅ Test chart created successfully!');
+
+            } catch (error) {
+                console.error('❌ Test chart error:', error);
+                alert('❌ Test chart error: ' + error.message);
+            }
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval) return;
+
+            const autoRefreshMs = {{ auto_refresh_interval }};
+            console.log(`Starting auto-monitoring with interval: ${autoRefreshMs}ms`);
+            refreshInterval = setInterval(runMonitoringAndRefresh, autoRefreshMs);
+            document.getElementById('refresh-status').textContent = 'On';
+            document.getElementById('toggle-refresh-btn').textContent = 'Stop Auto-Monitoring';
+            showStatus(`Auto-monitoring enabled - will run monitoring every ${autoRefreshMs/1000} seconds`, 'info');
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+            document.getElementById('refresh-status').textContent = 'Off';
+            document.getElementById('toggle-refresh-btn').textContent = 'Start Auto-Monitoring';
+        }
+
+        function toggleAutoRefresh() {
+            if (refreshInterval) {
+                stopAutoRefresh();
+                showStatus('Auto-monitoring disabled', 'info');
+            } else {
+                startAutoRefresh();
+            }
+        }
+
+        async function runMonitoring() {
+            if (isMonitoring) {
+                showStatus('Monitoring is already running...', 'info');
+                return;
+            }
+
+            isMonitoring = true;
+            showStatus('Starting monitoring... This may take a few seconds.', 'info');
+
+            try {
+                const response = await fetch('{{ url_for("run_monitor") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    }
+                });
+
+                if (response.ok) {
+                    showStatus('Monitoring completed successfully! Table refreshed.', 'success');
+                    // Refresh immediately after monitoring completes
+                    setTimeout(refreshTable, 1000);
+                } else {
+                    showStatus('Error running monitoring. Please try again.', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error. Please check your connection.', 'error');
+            } finally {
+                isMonitoring = false;
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-refresh stays off by default, user can toggle it on/off as needed
+            console.log('Website Monitoring Dashboard loaded');
+
+            // Initialize chart and website selector
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    updateWebsiteSelector(data.metrics);
+                    updateJitterChart();
+                })
+                .catch(error => {
+                    console.error('Error initializing dashboard:', error);
+                });
+        });
+    </script>
+</body>
+</html>
+

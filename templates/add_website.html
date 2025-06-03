@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Add New Website</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 50%; margin: auto; }
+        label, input { display: block; margin: 10px 0; }
+        input[type="text"] { width: 100%; padding: 8px; }
+        input[type="submit"] { padding: 10px 20px; }
+        .error { color: red; background-color: #ffe6e6; padding: 10px; border: 1px solid red; border-radius: 5px; margin: 10px 0; }
+        .success { color: green; background-color: #e6ffe6; padding: 10px; border: 1px solid green; border-radius: 5px; margin: 10px 0; }
+        .url-help { font-size: 12px; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Add New Website</h1>
+
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+            <div class="success">{{ success }}</div>
+        {% endif %}
+
+        <form method="POST">
+            <label for="url">Website URL:</label>
+            <input type="text" id="url" name="url" placeholder="https://example.com" value="{{ url or '' }}" required>
+            <div class="url-help">
+                Enter a valid URL starting with http:// or https://<br>
+                Examples: https://google.com, http://localhost:8080, https://example.com/path
+            </div>
+            <input type="submit" value="Add Website">
+        </form>
+        <br>
+        <a href="{{ url_for('index') }}">Back to Dashboard</a>
+    </div>
+</body>
+</html>
+
