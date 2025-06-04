@@ -20,8 +20,10 @@ sudo mysql_secure_installation
 ```bash
 # Prisijungti kaip root
 sudo mysql -u root -p
+```
 
-# MySQL konsolėje:
+**Įklijuoti MySQL konsolėje:**
+```sql
 CREATE DATABASE website_monitor;
 CREATE USER 'monitor_user'@'localhost' IDENTIFIED BY 'jusu_slaptazodis';
 GRANT ALL PRIVILEGES ON website_monitor.* TO 'monitor_user'@'localhost';
