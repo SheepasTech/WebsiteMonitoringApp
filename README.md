@@ -82,14 +82,14 @@ python flask_monitor_app.py
 
 ### Duomenų rinkimas:
 ```bash
-python improve_monitor.py                    # Vienas stebėjimo ciklas
-python improve_monitor.py --url <URL>        # Stebėti konkretų URL
-python improve_monitor.py --schedule         # Automatinis stebėjimas
+python improve_monitor.py              # Vienas stebėjimo ciklas
+python improve_monitor.py --url <URL>  # Stebėti konkretų URL
+python improve_monitor.py --schedule   # Automatinis stebėjimas
 ```
 
 ### Web sąsaja:
 ```bash
-python flask_monitor_app.py                 # Paleisti web panelę
+python flask_monitor_app.py            # Paleisti web panelę
 ```
 
 ## 📊 JITTER SKAIČIAVIMAS
@@ -112,10 +112,10 @@ mysql -u monitor_user -p website_monitor
 
 ### Naudingos komandos:
 ```sql
-SHOW TABLES;                                    -- Rodyti lenteles
-DESCRIBE website_metrics;                       -- Lentelės struktūra
+SHOW TABLES;                     -- Rodyti lenteles
+DESCRIBE website_metrics;        -- Lentelės struktūra
 SELECT * FROM website_metrics ORDER BY timestamp DESC LIMIT 10;  -- Paskutiniai duomenys
-TRUNCATE TABLE website_metrics;                 -- Išvalyti duomenis
+TRUNCATE TABLE website_metrics;  -- Išvalyti duomenis
 ```
 
 
