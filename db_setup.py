@@ -1,6 +1,6 @@
 import mysql.connector
 import os
-from config import load_dotenv
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()

@@ -11,10 +11,9 @@ from datetime import datetime
 import time
 import os
 import re
-import statistics
 import argparse
-import threading
-from config import load_dotenv, HARDCODED_WEBSITES
+from dotenv import load_dotenv
+from config import HARDCODED_WEBSITES
 
 # Load environment variables
 load_dotenv()
@@ -42,7 +41,7 @@ def is_valid_url(url):
     return url_pattern.match(url) is not None
 
 def calculate_jitter(results):
-    """Calculate network jitter from multiple response times"""
+    """Calculate network jitter as the difference between the last two ping latencies"""
     if len(results) < 2:
         return 0
 
@@ -57,9 +56,10 @@ def calculate_jitter(results):
                     times.append(0)
                 break
 
-    # Calculate jitter as standard deviation of response times
+    # Calculate jitter as the absolute difference between the last two latencies
     if len(times) >= 2:
-        return round(statistics.stdev(times), 6)
+        jitter = abs(times[-1] - times[-2])  # Difference between last two measurements
+        return round(jitter, 6)
     return 0
 
 def store_metrics(url, metrics):

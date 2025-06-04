@@ -3,7 +3,7 @@ import mysql.connector
 import subprocess
 from datetime import datetime
 import os
-from config import load_dotenv
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
